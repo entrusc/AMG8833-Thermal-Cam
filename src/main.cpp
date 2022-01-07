@@ -5,15 +5,21 @@
 
 #include "interpolation.h"
 
-#define SCREENX 240
-#define SCREENY 135
+#define BUTTON1_PIN 0
+#define BUTTON2_PIN 35
+
+#define MODE_OVERVIEW  0
+#define MODE_SELECTION 1
+
+#define SCREENX TFT_HEIGHT
+#define SCREENY TFT_WIDTH
 
 #define SENSOR_SIZE 8
 #define INTERPOLATED_SIZE 32
 
 #define BORDER_WIDTH 2
 // assume SCREENX > SCREENY – change for your case!
-#define PIXSIZE ((SCREENY-2*BORDER_WIDTH)/INTERPOLATED_SIZE)
+#define PIXSIZE ((SCREENY - 2 * BORDER_WIDTH) / INTERPOLATED_SIZE)
 
 #define SCALE_STEPS 4
 
@@ -51,11 +57,17 @@ float pixels[SENSOR_SIZE * SENSOR_SIZE];
 float dest2d[INTERPOLATED_SIZE * INTERPOLATED_SIZE];
 
 TFT_eSPI tft = TFT_eSPI(SCREENY, SCREENX);
+TFT_eSprite crosshair = TFT_eSprite(&tft);
 
 GridEYE grideye;
 
+uint8_t mode = MODE_OVERVIEW;
+bool btn1_down = true;
+bool btn2_down = true;
+
 void setup() {
-	Serial.begin(115200);
+  	pinMode(BUTTON1_PIN, INPUT);
+  	pinMode(BUTTON2_PIN, INPUT);
 
 	Wire.begin();
 	grideye.begin();
@@ -64,14 +76,18 @@ void setup() {
 	tft.setRotation(3);
 	tft.fillScreen(0x0000);
 	tft.fillRect(0, 0,
-	             INTERPOLATED_SIZE*PIXSIZE + 2*BORDER_WIDTH,
-	             INTERPOLATED_SIZE*PIXSIZE + 2*BORDER_WIDTH,
+	             INTERPOLATED_SIZE * PIXSIZE + 2 * BORDER_WIDTH,
+	             INTERPOLATED_SIZE * PIXSIZE + 2 * BORDER_WIDTH,
 	             0xFFFF);
 	tft.fillRect(BORDER_WIDTH, BORDER_WIDTH,
-	             INTERPOLATED_SIZE*PIXSIZE,
-	             INTERPOLATED_SIZE*PIXSIZE,
+	             INTERPOLATED_SIZE * PIXSIZE,
+	             INTERPOLATED_SIZE * PIXSIZE,
 	             0x0000);
 	tft.setCursor(0, 0);
+
+	crosshair.createSprite(3 * PIXSIZE, 3 * PIXSIZE);
+	crosshair.drawRect(0, 0, 3 * PIXSIZE, 3 * PIXSIZE, TFT_WHITE);
+	crosshair.drawRect(1, 1, 3 * PIXSIZE - 2, 3 * PIXSIZE - 2, TFT_WHITE);
 }
 
 float lowTemp = 0;
@@ -90,21 +106,9 @@ uint32_t colorMap(float temp) {
 	}
 	int index = lum * ((sizeof(camColors) / sizeof(uint16_t)) - 1 );
 	return camColors[index];
-
-	//
-	// R5 = ( R8 * 249 + 1014 ) >> 11;
-	// G6 = ( G8 * 253 +  505 ) >> 10;
-	// B5 = ( B8 * 249 + 1014 ) >> 11;
-	//
-	// uint16_t r = lum * 31;
-	// uint16_t g = lum * 63;
-	// uint16_t b = lum * 31;
-	//
-	// return (r << 11) | (g << 6) | b;
 }
 
 void adjustLimits(float low, float high) {
-	// Serial.printf("adjustLimits(%f, %f): lowTemp=%f; highTemp=%f;\n",low,high,lowTemp,highTemp);
 	float k;
 	float spread = highTemp - lowTemp;
 	k = low < lowTemp ? kFast : spread > 10 ? kSlow : 0;
@@ -113,8 +117,85 @@ void adjustLimits(float low, float high) {
 	highTemp = highTemp - k * (highTemp - high);
 }
 
+void renderOverview(float min, float max) {
+	tft.setTextColor(0xFFFF, 0x0000);
+	tft.setTextSize(2);
+
+	tft.setCursor(TEXT_X_OFFSET, 0);
+	tft.print("Min:");
+	tft.setCursor(TEXT_X_OFFSET, 16);
+	tft.print(min);
+	tft.print("C");
+
+	tft.setCursor(TEXT_X_OFFSET, 36);
+	tft.print("Max: ");
+	tft.setCursor(TEXT_X_OFFSET, 36 + 16);
+	tft.print(max);
+	tft.print("C");
+
+    for (int i = 0; i < SCALE_STEPS; i++) {
+        float t = lowTemp + i * (highTemp - lowTemp) / (SCALE_STEPS-1);
+        tft.fillRect(TEXT_X_OFFSET, 2*36 + i*16 + 2, 12, 12, colorMap(t));
+    	tft.setCursor(TEXT_X_OFFSET + 16, 2*36 + i*16);
+    	tft.print(t);
+		tft.print("C");
+    }
+}
+
+
+
+void renderSelection() {
+	tft.setTextColor(0xFFFF, 0x0000);
+	tft.setTextSize(2);
+	tft.setCursor(TEXT_X_OFFSET, TFT_WIDTH / 2 - 2);
+
+	float val = get_point(dest2d, INTERPOLATED_SIZE, INTERPOLATED_SIZE, INTERPOLATED_SIZE / 2, INTERPOLATED_SIZE / 2);
+	uint32_t color = colorMap(val);
+
+	tft.fillRect(TEXT_X_OFFSET, SCREENY / 2 - 3, 12, 12, color);
+	tft.setCursor(TEXT_X_OFFSET + 16, SCREENY / 2 - 3 - 2);
+	tft.print(val);
+	tft.print("C");
+
+	crosshair.pushSprite((INTERPOLATED_SIZE / 2) * PIXSIZE + BORDER_WIDTH - PIXSIZE, (INTERPOLATED_SIZE / 2) * PIXSIZE + BORDER_WIDTH - PIXSIZE, TFT_BLACK);
+}
+
+void onBtn2Press() {
+	switch (mode) {
+		case MODE_OVERVIEW:
+			mode = MODE_SELECTION;
+			break;
+		case MODE_SELECTION:
+			mode = MODE_OVERVIEW;
+			break;
+	}
+
+	tft.fillRect(TEXT_X_OFFSET, 0, TFT_HEIGHT - TEXT_X_OFFSET, TFT_WIDTH - 1, TFT_BLACK);
+}
+
+void onBtn1Press() {
+}
+
+void handleButtons() {
+	uint8_t btn1_pressed = digitalRead(BUTTON1_PIN);
+  	uint8_t btn2_pressed = digitalRead(BUTTON2_PIN);
+
+	if (btn1_pressed && !btn1_down) {
+		onBtn1Press();
+	}
+	if (btn2_pressed && !btn2_down) {
+		onBtn2Press();
+	}
+
+	btn1_down = btn1_pressed > 0;
+	btn2_down = btn2_pressed > 0;
+}
+
 void loop() {
 	unsigned long t0 = millis();
+	tft.startWrite();
+
+	handleButtons();
 
 	float min = 1000;
 	float max = -1000;
@@ -132,31 +213,42 @@ void loop() {
 		for (int x=0; x<INTERPOLATED_SIZE; x++) {
 			float val = get_point(dest2d, INTERPOLATED_SIZE, INTERPOLATED_SIZE, x, y);
 			uint32_t color = colorMap(val);
+
+			if (mode == MODE_SELECTION) {
+				// update all pixels except the ones that are used in
+				// the crosshair to prevent flickering
+
+				int d_center_x = x - INTERPOLATED_SIZE / 2;
+				int d_center_y = y - INTERPOLATED_SIZE / 2;
+				if (abs(d_center_x) <= 1 && abs(d_center_y) <= 1
+					&& !(d_center_x == 0 && d_center_y == 0)) {
+					int d_x = d_center_x < 0 ? PIXSIZE / 2 : 0;
+					int d_y = d_center_y < 0 ? PIXSIZE / 2 : 0;
+					int d_width = abs(d_center_x) > 0 ? PIXSIZE / 2 : 0;
+					int d_height = abs(d_center_y) > 0 ? PIXSIZE / 2 : 0;
+					tft.fillRect(
+							BORDER_WIDTH + PIXSIZE * x + d_x, BORDER_WIDTH + PIXSIZE * y + d_y, 
+							PIXSIZE - d_width, PIXSIZE - d_height, 
+							color
+						);
+					continue;
+				}
+			}
 			tft.fillRect(BORDER_WIDTH + PIXSIZE * x, BORDER_WIDTH + PIXSIZE * y, PIXSIZE, PIXSIZE, color);
 		}
 	}
 
-	tft.setTextColor(0xFFFF, 0x0000);
-	tft.setTextSize(2);
+	switch (mode) {
+		case MODE_OVERVIEW:
+			renderOverview(min, max);
+			break;
+		case MODE_SELECTION:
+			renderSelection();
+			break;
+	}
 
-	tft.setCursor(TEXT_X_OFFSET, 0);
-	tft.print("Min:");
-	tft.setCursor(TEXT_X_OFFSET, 16);
-	tft.print(min);
-
-	tft.setCursor(TEXT_X_OFFSET, 36);
-	tft.print("Max: ");
-	tft.setCursor(TEXT_X_OFFSET, 36 + 16);
-	tft.print(max);
-
-    for (int i = 0; i < SCALE_STEPS; i++) {
-        float t = lowTemp + i * (highTemp - lowTemp) / (SCALE_STEPS-1);
-        tft.fillRect(TEXT_X_OFFSET, 2*36 + i*16 + 2, 12, 12, colorMap(t));
-    	tft.setCursor(TEXT_X_OFFSET + 16, 2*36 + i*16);
-    	tft.print(t);
-    }
+	tft.endWrite();
 
 	unsigned long t = millis() - t0;
-	// Serial.print("Frame took "); Serial.print(t); Serial.println(" ms");
 	delay( t < 100 ? 100 - t : 1 );
 }
