@@ -65,6 +65,28 @@ uint8_t mode = MODE_OVERVIEW;
 bool btn1_down = true;
 bool btn2_down = true;
 
+/**
+ * @brief original library has a bug that causes negative values to 
+ * 		  reported incorrectly. This is a workaround until the library
+ *        is fixed.
+ * 
+ * @param i pixel index
+ * @return float temperature in degree Celsius
+ */
+float readTemperature(unsigned char i) {
+	int16_t temperature = grideye.getPixelTemperatureRaw(i);
+
+	if(temperature & (1 << 11))
+	{
+		//thanks to GitRayman for this fix
+		temperature |= 0b1111 << 12;
+	}
+
+	float degreesC = temperature * 0.25;
+
+	return degreesC;
+}
+
 void setup() {
   	pinMode(BUTTON1_PIN, INPUT);
   	pinMode(BUTTON2_PIN, INPUT);
@@ -117,6 +139,19 @@ void adjustLimits(float low, float high) {
 	highTemp = highTemp - k * (highTemp - high);
 }
 
+String formatTemperature(float temp) {
+	if (temp > 80) {
+		return String(">+80.0C");
+	} else
+		if (temp < -20) {
+			return String("<-20.0C");
+		}
+		
+	char buffer[20];
+	sprintf(buffer, "%+06.2fC", temp);
+	return String(buffer); 
+}
+
 void renderOverview(float min, float max) {
 	tft.setTextColor(0xFFFF, 0x0000);
 	tft.setTextSize(2);
@@ -124,25 +159,20 @@ void renderOverview(float min, float max) {
 	tft.setCursor(TEXT_X_OFFSET, 0);
 	tft.print("Min:");
 	tft.setCursor(TEXT_X_OFFSET, 16);
-	tft.print(min);
-	tft.print("C");
+	tft.print(formatTemperature(min));
 
 	tft.setCursor(TEXT_X_OFFSET, 36);
 	tft.print("Max: ");
 	tft.setCursor(TEXT_X_OFFSET, 36 + 16);
-	tft.print(max);
-	tft.print("C");
+	tft.print(formatTemperature(max));
 
     for (int i = 0; i < SCALE_STEPS; i++) {
         float t = lowTemp + i * (highTemp - lowTemp) / (SCALE_STEPS-1);
         tft.fillRect(TEXT_X_OFFSET, 2*36 + i*16 + 2, 12, 12, colorMap(t));
     	tft.setCursor(TEXT_X_OFFSET + 16, 2*36 + i*16);
-    	tft.print(t);
-		tft.print("C");
+    	tft.print(formatTemperature(t));
     }
 }
-
-
 
 void renderSelection() {
 	tft.setTextColor(0xFFFF, 0x0000);
@@ -154,10 +184,12 @@ void renderSelection() {
 
 	tft.fillRect(TEXT_X_OFFSET, SCREENY / 2 - 3, 12, 12, color);
 	tft.setCursor(TEXT_X_OFFSET + 16, SCREENY / 2 - 3 - 2);
-	tft.print(val);
-	tft.print("C");
+	tft.print(formatTemperature(val));
 
 	crosshair.pushSprite((INTERPOLATED_SIZE / 2) * PIXSIZE + BORDER_WIDTH - PIXSIZE, (INTERPOLATED_SIZE / 2) * PIXSIZE + BORDER_WIDTH - PIXSIZE, TFT_BLACK);
+}
+
+void onBtn1Press() {
 }
 
 void onBtn2Press() {
@@ -171,9 +203,6 @@ void onBtn2Press() {
 	}
 
 	tft.fillRect(TEXT_X_OFFSET, 0, TFT_HEIGHT - TEXT_X_OFFSET, TFT_WIDTH - 1, TFT_BLACK);
-}
-
-void onBtn1Press() {
 }
 
 void handleButtons() {
@@ -200,7 +229,7 @@ void loop() {
 	float min = 1000;
 	float max = -1000;
 	for(unsigned char i = 0; i < 64; i++) {
-		float val = grideye.getPixelTemperature(i);
+		float val = readTemperature(i);
 		pixels[i] = pixels[i] - 0.5 * ( pixels[i] - val );
 		if (val < min) { min = val; }
 		if (val > max) { max = val; }
