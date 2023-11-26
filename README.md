@@ -4,6 +4,10 @@ A simple thermal camera for ESP32 TTGO T-Display module using AMG8833 sensor bas
 
 ![ir-cam in action](docs/preview.png)
 
+## Releases
+
+For pre-built firmware binaries check the release assets: https://github.com/entrusc/AMG8833-Thermal-Cam/releases
+
 ## Parts List
 
 * [ESP32 TTGO T-Display](https://www.lilygo.cc/products/lilygo%C2%AE-ttgo-t-display-1-14-inch-lcd-esp32-control-board)
