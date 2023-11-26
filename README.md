@@ -1,6 +1,20 @@
 # AMG8833-Thermal-Cam
 
-A simple thermal camera for ESP32 TTGO T-Display module using AMG8833 sensor.
+A simple thermal camera for ESP32 TTGO T-Display module using AMG8833 sensor based on [smartynov](https://github.com/smartynov's) [ir-cam code](https://github.com/smartynov/AMG8833-Thermal-Cam)
+
+![ir-cam in action](docs/preview.png)
+
+## Parts List
+
+* [ESP32 TTGO T-Display](https://www.lilygo.cc/products/lilygo%C2%AE-ttgo-t-display-1-14-inch-lcd-esp32-control-board)
+* AMG8833 8x8 ir-sensor (e.g. from [Adafruit](https://www.adafruit.com/product/3538))
+* 16340 lithium battery holder (like e.g. [this one](https://aliexpress.com/item/32955019430.html))
+* a 16340 lithum battery
+* some wires & soldering iron
+* optional: 3d printed case ([STL files on printables.com](https://www.printables.com/model/658974-cheap-ir-cam))
+
+![ir-cam opened up](docs/preview2.png)
+
 
 This is a **fork** that incorporates the following changes:
 * temperatures are now formatted in a more readable way, and temperatures out of range are marked accordingly
